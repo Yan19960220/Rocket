@@ -19,7 +19,7 @@ def update_data():
     _ = getData(random_range=range_list)
 
 
-def run(training_data, test_data, num_runs=10, num_kernels=10_000):
+def run(training_data, test_data, num_runs=10, num_kernels=100):
     results = np.zeros(num_runs)
     timings = np.zeros([4, num_runs])  # training transform, test transform, training, test
 
@@ -71,9 +71,9 @@ if __name__ == '__main__':
     dataset_range = \
         (
             50,
-            100
+            # 100,
             # 200,
-            # 300
+            300
         )
     results_dataset = pd.DataFrame(index=dataset_range,
                                     columns=["accuracy_mean",

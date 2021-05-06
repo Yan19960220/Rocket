@@ -12,8 +12,9 @@ import numpy as np
 @njit
 def generate_kernels(input_length, num_kernels):
 
-    candidate_lengths = np.array((3, 5, 9, 17, 33, 65))
+    # candidate_lengths = np.array((3, 5, 9, 17, 33, 65))
     # candidate_lengths = np.array((7, 9, 11))
+    candidate_lengths = np.array((5, 7, 9))
 
     # initialise kernel parameters
     weights = np.zeros((num_kernels, candidate_lengths.max()))  # see note

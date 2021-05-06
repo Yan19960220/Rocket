@@ -4,12 +4,14 @@
 # @Site    : 
 # @File    : data.py
 # @Software: PyCharm
-
+import os
 import csv
 import random
 import numpy as np
 from pandas.core.frame import DataFrame
-from utils import file2list
+from scipy.stats import stats
+
+from utils import file2list, check_if_file_exits
 
 VALUES_FILE = './data/glitch_values.bin'
 TIMES_FILE = './data/glitch_times.bin'
@@ -45,7 +47,7 @@ def not_contain_nan(np_array):
         return True not in np.isnan(np_array)
 
 
-def getData(random_range=[50], DURATION_TO_EXAMINE=0.5):
+def getData(random_range=[50], DURATION_TO_EXAMINE=0.5, is_split=True):
     # Type Check
     if not isinstance(random_range, list):
         raise TypeError('random_range is not type List: {}'.format(type(random_range)))
@@ -68,20 +70,58 @@ def getData(random_range=[50], DURATION_TO_EXAMINE=0.5):
     for item in random_range:
         result[item] = []
 
+    split_rate = [0.6, 0.4]
     for item_range in random_range:
         for duration in HALF_VALUES_PER_DURATION:
             segment_per_class = get_segment_per_class(duration, glitch_classes_inverted, glitch_peak,
                                                       glitch_times, glitch_values)
             result[item_range].append(random_sample(segment_per_class, item_range))
-        save2txt(item_range, result)
+        # split_num = [int(num*result[item_range][0].__len__()) for num in split_rate]
+
+        if is_split:
+            if check_if_file_exits("./data/" + str(item_range) + "_TRAIN" + ".csv"):
+                os.remove("./data/" + str(item_range) + '_TRAIN' + ".csv")
+                os.remove("./data/" + str(item_range) + '_TEST' + ".csv")
+            refactor_data = {}
+            train_data = []
+            test_data = []
+            for label in range(10):
+                refactor_data[label] = []
+                for item in result[item_range][0]:
+                    if item[0] == label:
+                        refactor_data[label].append(item)
+                length_for_label = refactor_data[label].__len__()
+                train_data_num = int(length_for_label*split_rate[0])
+
+                train_data += refactor_data[label][:train_data_num]
+                test_data += refactor_data[label][train_data_num:]
+
+                # train_data = result[item_range][0][:split_num[0]]
+                # test_data = result[item_range][0][split_num[0]:]
+
+            save2txt(train_data, item_range, '_TRAIN')
+            save2txt(test_data, item_range, '_TEST')
+        else:
+            save2txt(result, item_range, None)
         print(">> time_series range - " + str(item_range))
     return result
 
 
-def save2txt(item_range, result):
-    source = result[item_range][0]
-    data = DataFrame(source, index=None).set_index(0)
-    data.to_csv("./data/" + str(item_range) + ".csv")
+def save2csv_dict(dict_data, item_range, data_type):
+    my_list = [dict_data]
+    data = DataFrame(my_list, index=None).set_index(0)
+    data.to_csv("./data/" + str(item_range) + data_type + ".csv")
+
+
+def save2txt(data, item_range, data_type):
+    if data_type is None:
+        source = data[item_range][0]
+        data = DataFrame(source, index=None).set_index(0)
+        data.to_csv("./data/" + str(item_range) + data_type + ".csv", mode='a')
+    else:
+        source = data
+        data = DataFrame(source, index=None).set_index(0)
+        data.to_csv("./data/" + str(item_range) + data_type + ".csv", mode='a', index=True)
 
 
 def read_data():
