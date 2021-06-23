@@ -14,9 +14,9 @@ def random_sel_exp(max_num: int, min_num: int = 1):
     return min_num
 
 
-def update_data():
-    range_list = [50, 100, 200, 300]
-    _ = getData(random_range=range_list)
+def update_data(if_split):
+    range_list = [0, 50, 100, 200, 300, 400, 500]
+    _ = getData(random_range=range_list, DURATION_TO_EXAMINE=[0.5, 1, 1.5, 2],is_split=if_split)
 
 
 def run(training_data, test_data, num_runs=10, num_kernels=100):
@@ -66,14 +66,17 @@ if __name__ == '__main__':
     arguments = create_parser()
 
     if arguments.update_data:
-        update_data()
+        # print(arguments.if_split)
+        update_data(True)
 
     dataset_range = \
         (
             50,
-            # 100,
-            # 200,
-            300
+            100,
+            200,
+            300,
+            400,
+            500
         )
     results_dataset = pd.DataFrame(index=dataset_range,
                                     columns=["accuracy_mean",

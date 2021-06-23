@@ -8,16 +8,21 @@ import os
 import csv
 import random
 import numpy as np
+import scipy
+from matplotlib import mlab
 from pandas.core.frame import DataFrame
+from scipy.interpolate import interp1d
 from scipy.stats import stats
 
-from utils import file2list, check_if_file_exits
+from utils import file2list, check_if_file_exits, whiten, bandpass, zca_whitening, delete_history
 
-VALUES_FILE = './data/glitch_values.bin'
-TIMES_FILE = './data/glitch_times.bin'
-LENGTHS_FILE = './data/glitch_lengths.bin'
-METADATA_FILE = './data/trainingset_v1d1_metadata.csv'
+BASE_DIR = '../virgo_data/'
+VALUES_FILE = BASE_DIR + './data/glitch_values.bin'
+TIMES_FILE = BASE_DIR + './data/glitch_times.bin'
+LENGTHS_FILE = BASE_DIR + './data/glitch_lengths.bin'
+METADATA_FILE = BASE_DIR + './data/trainingset_v1d1_metadata.csv'
 POS_FILE = './pos.txt'
+OUTPUT_DATA = './virgo/'
 
 OUTPUT_POS = True
 load_history_matrix = False
@@ -36,6 +41,19 @@ data_index = {
 }
 
 
+def intercept_part_dataSet(random_segments):
+    return {'Air_Compressor': random_segments['Air_Compressor'],  # (50, 10)
+            '1400Ripples': random_segments['1400Ripples'],
+            '1080Lines': random_segments['1080Lines'],
+            'Blip': random_segments['Blip'],
+            'Extremely_Loud': random_segments['Extremely_Loud'],
+            'Koi_Fish': random_segments['Koi_Fish'],
+            'Chirp': random_segments['Chirp'],
+            'Light_Modulation': random_segments['Light_Modulation'],
+            'Low_Frequency_Burst': random_segments['Low_Frequency_Burst'],
+            'Low_Frequency_Lines': random_segments['Low_Frequency_Lines']}
+
+
 def calculate_time(time, time_ns):
     return np.float64(time + '.' + '0' * (9 - len(time_ns)) + time_ns)
 
@@ -45,6 +63,13 @@ def not_contain_nan(np_array):
         return True not in np.isnan(list2array(np_array))
     else:
         return True not in np.isnan(np_array)
+
+
+def preprocessing(X, phase_shift=0, time_shift=0):
+    fband = [35.0, 350.0]
+    T = 800.0
+    XWhiten = whiten(X, dt=T)
+    return bandpass(XWhiten, fband, T)
 
 
 def getData(random_range=[50], DURATION_TO_EXAMINE=0.5, is_split=True):
@@ -68,60 +93,66 @@ def getData(random_range=[50], DURATION_TO_EXAMINE=0.5, is_split=True):
     result = {}
 
     for item in random_range:
-        result[item] = []
+        result[item] = {}
 
     split_rate = [0.6, 0.4]
     for item_range in random_range:
         for duration in HALF_VALUES_PER_DURATION:
             segment_per_class = get_segment_per_class(duration, glitch_classes_inverted, glitch_peak,
                                                       glitch_times, glitch_values)
-            result[item_range].append(random_sample(segment_per_class, item_range))
-        # split_num = [int(num*result[item_range][0].__len__()) for num in split_rate]
+            established_data = random_sample(segment_per_class, item_range)
+            result[item_range][duration] = established_data
+            # split_num = [int(num*result[item_range][0].__len__()) for num in split_rate]
 
-        if is_split:
-            if check_if_file_exits("./data/" + str(item_range) + "_TRAIN" + ".csv"):
-                os.remove("./data/" + str(item_range) + '_TRAIN' + ".csv")
-                os.remove("./data/" + str(item_range) + '_TEST' + ".csv")
-            refactor_data = {}
-            train_data = []
-            test_data = []
-            for label in range(10):
-                refactor_data[label] = []
-                for item in result[item_range][0]:
-                    if item[0] == label:
-                        refactor_data[label].append(item)
-                length_for_label = refactor_data[label].__len__()
-                train_data_num = int(length_for_label*split_rate[0])
+            suffix = '_' + str(duration)
 
-                train_data += refactor_data[label][:train_data_num]
-                test_data += refactor_data[label][train_data_num:]
+            if is_split:
+                print(f"Begin split data".center(80, "-"))
+                delete_history(["./data/" + str(item_range) + suffix + "_TRAIN" + ".csv",
+                                "./data/" + str(item_range) + suffix + '_TEST' + ".csv"])
+                refactor_data = {}
+                train_data = []
+                test_data = []
+                for label in range(data_index.__len__()):
+                    refactor_data[label] = []
+                    for item in result[item_range][duration]:
+                        if item[0] == label:
+                            refactor_data[label].append(item)
+                    length_for_label = refactor_data[label].__len__()
+                    train_data_num = int(length_for_label*split_rate[0])
 
-                # train_data = result[item_range][0][:split_num[0]]
-                # test_data = result[item_range][0][split_num[0]:]
+                    train_data += refactor_data[label][:train_data_num]
+                    test_data += refactor_data[label][train_data_num:]
 
-            save2txt(train_data, item_range, '_TRAIN')
-            save2txt(test_data, item_range, '_TEST')
-        else:
-            save2txt(result, item_range, None)
-        print(">> time_series range - " + str(item_range))
+                    # train_data = result[item_range][0][:split_num[0]]
+                    # test_data = result[item_range][0][split_num[0]:]
+
+                save2txt(train_data, item_range, suffix + '_TRAIN')
+                save2txt(test_data, item_range, suffix + '_TEST')
+            else:
+                delete_history("./data/" + str(item_range) + suffix + ".csv")
+                save2txt(result, item_range, None, duration)
+            print(">> time_series range - " + str(item_range))
+    print(f"finished all".center(90, '*'))
     return result
 
 
 def save2csv_dict(dict_data, item_range, data_type):
     my_list = [dict_data]
     data = DataFrame(my_list, index=None).set_index(0)
-    data.to_csv("./data/" + str(item_range) + data_type + ".csv")
+    data.to_csv(OUTPUT_DATA + str(item_range) + data_type + ".csv")
 
 
-def save2txt(data, item_range, data_type):
+def save2txt(data, item_range, data_type, duration=None):
     if data_type is None:
-        source = data[item_range][0]
+        source = data[item_range][duration]
         data = DataFrame(source, index=None).set_index(0)
-        data.to_csv("./data/" + str(item_range) + data_type + ".csv", mode='a')
+        data.to_csv(OUTPUT_DATA + str(item_range) + '_' + str(duration) + ".csv")
     else:
         source = data
         data = DataFrame(source, index=None).set_index(0)
-        data.to_csv("./data/" + str(item_range) + data_type + ".csv", mode='a', index=True)
+        data.to_csv(OUTPUT_DATA + str(item_range) + data_type + ".csv", mode='a', index=True)
+    print(f"save data finished".center(80, "-"))
 
 
 def read_data():
@@ -204,15 +235,17 @@ def random_sample(segment_per_class, sample_range):
     else:
         for k in segment_per_class.keys():
             array = list2array(segment_per_class[k])
-            if len(segment_per_class[k]) > sample_range:
-                list_a = random.sample(segment_per_class[k], sample_range)
-                array = list2array(list_a)
+            if sample_range > 0:
+                if len(segment_per_class[k]) > sample_range:
+                    list_a = random.sample(segment_per_class[k], sample_range)
+                    array = list2array(list_a)
             dataset[k] = (array[:, 0].tolist(), array[:, 1].tolist())
-    dataset = dataSet(dataset)
+    dataset = intercept_part_dataSet(dataset)
     ts = []
     for label in dataset:
         (list_time_series, list_indexes) = dataset[label]
         for time_series, indexes in zip(list_time_series, list_indexes):
+            # time_series = preprocessing(time_series)
             time_series.insert(0, data_index[label])
             ts.append(time_series)
     return ts
@@ -224,19 +257,6 @@ def load_matrix_from_file(matrix_filepath, length):
 
 def list2array(listA):
     return np.array(listA)
-
-
-def dataSet(random_segments):
-    return {'Air_Compressor': random_segments['Air_Compressor'],  # (50, 10)
-            '1400Ripples': random_segments['1400Ripples'],
-            '1080Lines': random_segments['1080Lines'],
-            'Blip': random_segments['Blip'],
-            'Extremely_Loud': random_segments['Extremely_Loud'],
-            'Koi_Fish': random_segments['Koi_Fish'],
-            'Chirp': random_segments['Chirp'],
-            'Light_Modulation': random_segments['Light_Modulation'],
-            'Low_Frequency_Burst': random_segments['Low_Frequency_Burst'],
-            'Low_Frequency_Lines': random_segments['Low_Frequency_Lines']}
 
 
 def extra_data_from_meta(file):
